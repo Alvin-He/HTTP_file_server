@@ -1,0 +1,14 @@
+{
+    "name": "File server over http",
+    "version": "0.0.1",
+    "main": "./src/server/server.js",
+    "dependencies": {
+        "cookie-parser": "^1.4.6"
+    },
+    "engines": {
+        "node": "^16.0.0"
+    },
+    "scripts": {
+        "start": "node ./src/server/server.js"
+    }
+}

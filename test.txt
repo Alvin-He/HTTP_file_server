@@ -1,0 +1,15 @@
+{
+    "Admins": {
+        "ubuntu": "Grace-Prof-102"
+    },
+    "Users": {
+        "frc4669": "9664Galileo"
+    },
+
+    "GuestAllowed": false, 
+    "GuestWritable": false,
+
+    "chrootDirectoryUsers": "", 
+    "chrootWriteable": true
+
+}
