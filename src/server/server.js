@@ -1,16 +1,23 @@
 const http = require("node:http");
+const express = require("express")
 const fs = require("node:fs");
 const fsAsync = require("node:fs/promises");
 const { Stream } = require("node:stream");
 const StreamAsync = require("node:stream/promises");
 const { Buffer } = require("node:buffer");
 const crypto = require("node:crypto");
-const time = require("node:timers")
+const time = require("node:timers");
+const { dir } = require("node:console");
 const DEFAULT_CONFIG_PATH = "./config.json"
 
 class Helpers {
     static generateRandomString(length = 8){
         return crypto.randomUUID().substring(0, length)
+    }
+    static genError(status, message = "") {
+        let err = new Error(message);
+        err.status = status;
+        return err
     }
 }
 
@@ -29,6 +36,25 @@ class FileSystemOp {
         const absolutePath = await fsAsync.realpath(path);
         return true
     }
+
+    static async dirList(path, abortSignal = undefined) {
+        if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File"); 
+        const absolutePath = await fsAsync.realpath(path);
+        const listing = await fsAsync.readdir(absolutePath, {withFileTypes: true}); 
+        let directoryObject = {}
+        for (let i = 0; i < listing.length; i++) {
+            let obj = listing[i]; 
+            const type = (
+                (obj.isDirectory() && "Dir") ||
+                (obj.isFile() && "File") ||
+                (obj.isSymbolicLink() && "SymLink") ||
+                undefined
+            ); 
+            directoryObject[obj.name] = type; 
+        }
+        return directoryObject; 
+    } 
+
     static async readFile(path, abortSignal = undefined) {
         if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File") 
         const absolutePath = await fsAsync.realpath(path);
@@ -83,60 +109,76 @@ class HTTPFileServer {
 
     constructor(config) {
         this.config = config; 
-        this._server = http.createServer();
+        this._server = express();
 
         this.currentlyActiveSessions = {};
         
-        this._server.on("request", this._requestListener.bind(this));
+        this._server.use("/", express.static("./src/client/")); 
+
+        // auto decode json
+        this._server.use("/api/" ,express.json(
+            {
+                "inflate": true,
+                "strict": false, 
+                "type": "application/json",
+            }
+        ));
+
+        // checks Auth validation 
+        // this._server.post("/api/", (req, res, next) => {
+        //     const token = req.body["Token"];
+        //     if (!token){
+        //         if (req.body["User"] && req.body["Password"]){
+        //             if (!this.onAuth(req.body["User"], req.body["Password"])) 
+        //                 return next(Helpers.genError(401, "Incorrect Info")); 
+        //             const token = this.addSessionTokenForUser(req.body["User"]); 
+        //             res.status(201).json({
+        //                 "Token": token,
+        //             });
+        //         }
+        //         return next(Helpers.genError(400, "Need Token")); 
+        //     } 
+        //     if (!(this.currentlyActiveSessions[token] && this.currentlyActiveSessions[token].isSessionStillValid())) {
+        //         return next(Helpers.genError(401, "Session Invalid."))
+        //     }
+        //     next()
+        // });
+
+        this._server.post("/api/fs/:op", async (req, res, next) => {
+            if (!req.body["Path"]) return next(Helpers.genError(400, "Path required")); 
+            try {
+            switch (req.params.op) {
+                case "dirList":
+                    const listing = await FileSystemOp.dirList(req.body["Path"]).catch((err) => { throw Helpers.genError(500, err); });
+                    return res.status(201).json(listing); 
+                    break;
+                default:
+                    break;
+            } 
+            } catch(err) {
+                next(err);
+            }
+        })
+        // this._server.post("/api/", this._requestListener.bind(this));
+
+        // err message response 
+        this._server.use(function (err, req, res, next) {
+            res.status(err.status || 500);
+            res.send({ error: err.message });
+        })
+
+        //default response 
+        this._server.use(function (req, res) {
+            res.status(404);
+            res.send({ error: "Not Found" })
+        });
+
     }
     listen(port = 8080, host = "127.0.0.1") {
         this._server.listen(port, host, () => {
             console.log(`HTTP FILE SERVER Running on ${host}:${port}`)
         }); 
     }
-    /**
-     * Listens to incoming http requests, (http.server.prototype).on('request', requestListener);
-     * @param {http.IncomingMessage} req Request sent from the client 
-     * @param {http.ServerResponse} res Response that's going to be sent to the client
-     */
-    async _requestListener(req, res) {
-        console.log(`INCOMING ${req.method} ${req.url}`)
-        let cookies = req.headers.cookie
-        if (req.method == "POST") {
-            let body = '';
-            req.on('data', (data) => {
-                body += data.toString();
-            })
-            await new Promise((resolve) => { req.on("end", () => {resolve()}); }); 
-            if (req.headers['content-type'] != 'application/json') return this.genErrorRes(res, "Bad Request", 400); 
-            let payload = JSON.parse(body); 
-            if (payload["Type"] == "Auth") {
-                if (!payload["User"] && !payload["Password"]) return this.genErrorRes(res, "Bad Request", 400); 
-                if (this.onAuth(payload["User"], payload["Password"])) {
-                    const token = this.addSessionTokenForUser(payload["User"]); 
-                    const resObj = {
-                        "Token": token,
-                        "Home": "/hello"
-                    }
-                    const resJSON = JSON.stringify(resObj); 
-                    res.writeHead(201, {
-                        'Content-Length': Buffer.byteLength(resJSON),
-                        'Content-Type': "application/json",
-                        'Set-Cookie': [`X-Auth-Token=${token}; SameSite=Strict`] 
-                    }); 
-                    res.end(resJSON); 
-                    return true
-                }
-                return this.genErrorRes(res, "Unauthorized", 401)
-            }
-        }
-        this.genErrorRes(res, "Not Implemented", 501);
-    }
-    genErrorRes(res, message = "ERROR!", errorCode = 404) {
-        console.log(`RESPONSE ERROR ${errorCode}, ${message}`); 
-        res.writeHead(errorCode, "Error");
-        res.end(message);
-    } 
     addSessionTokenForUser(user) {
         const token = Helpers.generateRandomString(36); 
         this.currentlyActiveSessions[token] = new HTTPFileServer.Session(user, token);
@@ -159,6 +201,7 @@ class HTTPFileServer {
             console.log(`${user} Login successful.`);
             return true
         } 
+        return false
     }
 }
 

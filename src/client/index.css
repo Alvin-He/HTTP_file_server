@@ -1,0 +1,41 @@
+
+* {
+    margin: 0px;
+    padding: 0px;
+}
+
+#file-objs {
+    border-bottom-style: solid;
+    border-bottom-width: 1px;
+    border-bottom-color: black;
+}
+
+.file-obj {
+    display: inline-flex;
+    height: 2rem;
+    width: 100%;
+    align-items: center;
+    border-style: solid;
+    border-width: 1px;
+    border-color: black;
+    border-right: none;
+    border-bottom: none;
+    flex-shrink: 0
+}
+
+.file-obj li {
+    display: inline-flex;
+    flex-grow: 0;
+    flex-shrink: 0;
+    width: 10rem;
+    height: 100%;
+    border-right-style: solid;
+    border-right-width: 1px;
+    border-right-color: black;
+    align-items: center;
+    text-anchor: start;
+}
+
+.file-obj:hover {
+    background-color: cadetblue;
+}
