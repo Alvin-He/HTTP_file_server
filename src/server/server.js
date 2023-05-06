@@ -153,6 +153,7 @@ class HTTPFileServer {
                     return res.status(201).json(listing); 
                     break;
                 default:
+                    throw Helpers.genError(400, "Unknown Op");
                     break;
             } 
             } catch(err) {
