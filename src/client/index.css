@@ -1,12 +1,10 @@
 
+[hidden] { display:none !important; }
+
 * {
     box-sizing: border-box;
     margin: 0px;
     padding: 0px;
-}
-
-#address-bar {
-    width: 100%;
 }
 
 #file-objs {
@@ -41,6 +39,7 @@
     text-anchor: start;
 }
 
-.file-obj:hover {
+.file-obj:hover,
+.file-obj:focus-within {
     background-color: cadetblue;
 }

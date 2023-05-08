@@ -1,0 +1,55 @@
+#address-bar {
+    width: 100%;
+}
+
+#navbar {
+    display: inline-flex;
+    height: 2rem;
+    width: 100%;
+}
+
+#nav-objs {
+    display: inline-flex;
+    height: 100%;
+}
+
+#nav-objs > div {
+    display: inline-flex;
+    height: 100%;
+    align-items: center;
+    --border-style-onhover: none; 
+}
+
+#nav-objs > div:hover, 
+#nav-objs > :focus-within {
+    background-color: aquamarine;
+    border: solid;
+    border-width: 1px;
+    border-color: blue;
+    border-right: none;
+    --border-style-onhover: solid;
+}
+
+#nav-objs > div > .next-icon {
+    display: inline-flex;
+    height: 100%;
+    align-items: center;
+}
+
+#nav-objs > div > .next-icon{
+    border: 1px;
+    border-color: blue;
+    border-right-style: var(--border-style-onhover);
+    border-left-style: var(--border-style-onhover);
+}
+
+#nav-objs > div > * {
+    padding-left: 2px;
+    padding-right: 2px
+}
+
+#nav-upload-button {
+    /* background: none; */
+    text-align: left;
+    margin-left: auto;
+}

@@ -6,18 +6,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Server</title>
     <link rel="stylesheet" type="text/css" href="./index.css">
+    <link rel="stylesheet" type="text/css" href="./navbar.css">
+    <link rel="stylesheet" type="text/css" href="./rightClickMenu.css">
 </head>
-<body>  
-    <div id="template-file-obj-js-clone" hidden="true">
-        <ol class="file-obj">
-            <li></li>
-            <li></li>
-        </ol>
+<body>
+    <!-- Handlers for file Upload and Download -->
+    <input type="file" id="file-uploader" multiple hidden>
+    <input type="file" id="file-uploader-dirs" webkitdirectory hidden>
+
+    <ol id="template-file-obj-js-clone" hidden="true" tabindex="0" class="file-obj">
+        <li></li>
+        <li></li>
+    </ol>
+    <div id="template-nav-obj-js-clone" hidden="true">
+        <p class="js-args-name"></p>
+        <div class="next-icon">
+            <p>&gt;</p>
+        </div>
     </div>
 
-    <input id="address-bar">
-    <div id="file-objs" type="url" autocomplete="off"></div>
+    <div id="navbar">
+        <div id="nav-objs"></div>
+        <input id="address-bar" type="url" hidden="true">
+        <button id="nav-upload-button">Upload</button>
+    </div>
+    
+    <div id="file-objs"></div>
 
+    <div id="right-click-menu" hidden>
+        <div id="right-click-download">
+            <button>Download</button>
+        </div>
+        <div id="right-click-upload">
+            <button>Upload</button>
+        </div>
+        <div id="right-click-delete">
+            <button>Delete</button>
+        </div>
+    </div>
     <script type="module" src="./index.mjs"></script>
 </body>
 </html>

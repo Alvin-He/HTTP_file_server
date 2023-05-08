@@ -7,7 +7,8 @@ const StreamAsync = require("node:stream/promises");
 const { Buffer } = require("node:buffer");
 const crypto = require("node:crypto");
 const time = require("node:timers");
-const { dir } = require("node:console");
+const ws = require("ws"); 
+const Path = require('path');
 const DEFAULT_CONFIG_PATH = "./config.json"
 
 class Helpers {
@@ -33,7 +34,7 @@ class FileSystemOp {
     }
     // TODO: Permission System
     static async hasAccess(path) {
-        const absolutePath = await fsAsync.realpath(path);
+        const absolutePath = Path.resolve(path); 
         return true
     }
 
@@ -54,7 +55,16 @@ class FileSystemOp {
         }
         return directoryObject; 
     } 
-
+    static async mkdir(path) {
+        if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File") 
+        await fsAsync.mkdir(path, {recursive: true}).catch((err) => {throw Error("Make Dir Failed"); });
+        return true
+    }
+    static async del(path) {
+        if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File");
+        await fsAsync.rm(path).catch((err) => {throw err; });
+        return true
+    }
     static async readFile(path, abortSignal = undefined) {
         if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File") 
         const absolutePath = await fsAsync.realpath(path);
@@ -62,7 +72,7 @@ class FileSystemOp {
     }
     static async writeFile(path, fileStream, abortSignal = undefined) {
         if (!(await FileSystemOp.hasAccess(path))) throw Error("No Permission to Access File") 
-        const absolutePath = await fsAsync.realpath(path);
+        const absolutePath = Path.resolve(path); // not resolving with real path here cuz the file prob doesn't exist  
         const temporaryPathHeader = "-" + Helpers.generateRandomString() + ".downloading";
         const absoluteTempPath = absolutePath + temporaryPathHeader; 
         let writeStream = fs.createWriteStream(absoluteTempPath);
@@ -75,8 +85,11 @@ class FileSystemOp {
             await fsAsync.rm(absoluteTempPath).catch((err) => { throw Error("Failed to remove Reference.\n" + err); });
             throw err
         } // changing references and removing the old one
-        await fsAsync.rm(absolutePath).catch((err) => { throw Error("Failed to remove Previous Reference.\n" + err); });
+        if (fs.existsSync(absolutePath)) {
+            await fsAsync.rm(absolutePath).catch((err) => { throw Error("Failed to remove Previous Reference.\n" + err); });
+        }
         await fsAsync.rename(absoluteTempPath, absolutePath).catch((err) => { throw Error("Failed to rename Reference.\n" + err); });
+        return true
     }
 }
 
@@ -112,7 +125,8 @@ class HTTPFileServer {
         this._server = express();
 
         this.currentlyActiveSessions = {};
-        
+        this.currentlyActiveUploads = {}; 
+
         this._server.use("/", express.static("./src/client/")); 
 
         // auto decode json
@@ -143,15 +157,40 @@ class HTTPFileServer {
         //     }
         //     next()
         // });
+        
+        this._server.post("/endpoints/binary/uploader", async (req, res, next) => {
+            const writeToken = req.headers["x-write-token"]
+            if (!writeToken || !this.currentlyActiveUploads[writeToken]) return next(Helpers.genError(400, "Need Write Approve"));
+            let path = this.currentlyActiveUploads[writeToken]; 
+            if (await FileSystemOp.writeFile(path, req).catch((err) => {next(err)})) {
+                return res.status(201).json("Success"); 
+            }
+        })
 
         this._server.post("/api/fs/:op", async (req, res, next) => {
             if (!req.body["Path"]) return next(Helpers.genError(400, "Path required")); 
+            const filePath = req.body["Path"]
             try {
             switch (req.params.op) {
                 case "dirList":
-                    const listing = await FileSystemOp.dirList(req.body["Path"]).catch((err) => { throw Helpers.genError(500, err); });
+                    const listing = await FileSystemOp.dirList(filePath).catch((err) => { throw Helpers.genError(500, err); });
                     return res.status(201).json(listing); 
                     break;
+                case "mkdir":
+                    if (await FileSystemOp.mkdir(filePath).catch((err) => next(err))) {
+                        return res.status(201).json("Success");
+                    }
+                case "del": 
+                    if (await FileSystemOp.del(filePath).catch((err) => next(err))) {
+                        return res.status(201).json("Success");
+                    }
+                case "uploadPreApprove": 
+                    if (!await FileSystemOp.hasAccess(filePath)) throw Helpers.genError(401, "No Access");
+                    const writeToken = Helpers.generateRandomString(36);
+                    this.currentlyActiveUploads[writeToken] = filePath
+                    return res.status(201).json({"writeToken": writeToken}); 
+
+                    break; 
                 default:
                     throw Helpers.genError(400, "Unknown Op");
                     break;

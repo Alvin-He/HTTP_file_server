@@ -1,0 +1,38 @@
+#right-click-menu {
+    position: absolute;
+    /* Position is set via java script */
+
+    width: 20vw;
+    min-width: fit-content;
+
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+
+    border: grey;
+    border-width: 1px;
+    border-style: solid;
+
+    filter: drop-shadow(3px 3px 2px #000);
+}
+
+#right-click-menu > * {
+    width: 100%;
+    height: 1.5rem;
+    background-color: lightgrey;
+}
+
+#right-click-menu > * > button{
+    width: inherit;
+    height: inherit;
+    background: none;
+    text-align: left;
+    border: none;
+}
+
+#right-click-menu > *:hover, 
+#right-click-menu > :focus-within {
+    background-color: aliceblue;
+}
+
