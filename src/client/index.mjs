@@ -1,4 +1,8 @@
 
+import { FileConstants } from "./constants.mjs";
+import { DirectoryListing, FileOp } from "./fileSystem.mjs"
+import { downloadZip } from "./libs/client-zip-v2.4.2/index.js";
+
 const APIPATH = new URL("http://127.0.0.1:8080/api")
 const BINARYPATH = new URL("http://127.0.0.1:8080/endpoints/binary")
 
@@ -16,9 +20,67 @@ function getReqConfig(body) {
         "body": JSON.stringify(body)
     }
 }
+
+function openSaveChooser(saveName, objectURL) {
+    const link = document.createElement("a")
+    link.href = objectURL; 
+    link.download = saveName; 
+    link.click(); 
+    link.remove(); 
+    URL.revokeObjectURL(objectURL); 
+}
+
+async function download(paths) {
+
+    if ((paths.length == 1) && !FileOp.isDirectory(paths[0])) {
+        console.log("one file download");
+        const path = paths[0];
+        const res = await FileOp.read(path); 
+        if (res.ok) {
+            return openSaveChooser(FileOp.getObjName(path), URL.createObjectURL(await res.blob()));
+        }
+        console.log(await res.text()); 
+        alert("Filed to download"); 
+        return;
+    }
+    let listing = []; 
+    for (let i of paths) {
+        if (FileOp.isDirectory(i)) {
+            let nested = await DirectoryListing.nestedListing(i);
+            let linear = DirectoryListing.flattenNestedListing(nested);
+            listing = listing.concat(linear);
+            continue;
+        }
+        // if it's an root file 
+        listing.push(i); 
+    }
+
+    let zipArray = []
+    for (let path of listing) {
+        let fileRes = await FileOp.read(path);
+        if (!fileRes.ok) {
+            console.log(await fileRes.text()); 
+            alert("failed to download some files");
+            continue; 
+        } 
+        zipArray.push({
+            name: FileOp.removeRoot(path),
+            input: await fileRes.blob(), 
+            // input: download process 
+        }); 
+    }
+    console.log(zipArray);
+    let content = await downloadZip(zipArray).blob();
+    let objURL = URL.createObjectURL(content); 
+    let saveName = "test.zip"
+    openSaveChooser(saveName, objURL);
+    return; 
+}
+
+
 async function scanDirs(item, uploadDir) {
     //debugger
-    if (!item.isDirectory) { 
+    if (!item.FileOp.isDirectory) { 
         item.file((file) => {
             let directory = uploadDir + item.fullPath;
             directory = directory.substring(0, directory.length - file.name.length);
@@ -26,13 +88,13 @@ async function scanDirs(item, uploadDir) {
         });
         return true; 
     }
-    console.log(item.fullPath);
+    // Possible Bug when uploading from and to the same directory, idk why u would ever do that tho
     await MkDir(uploadDir + item.fullPath);
     let directoryReader = item.createReader();
-    directoryReader.readEntries((entries) => {
-        entries.forEach(async (entry) => {
-            scanDirs(entry, uploadDir); 
-        });
+    directoryReader.readEntries(async (entries) => {
+        for (let i = 0; i < entries.length; i++) {
+            scanDirs(entries[i], uploadDir); 
+        }
     });
 
 } 
@@ -128,11 +190,7 @@ function getSlots(fileObjNode) {
 }
 
 async function dirList(path) {
-    let requestConfig = getReqConfig({ "Path": path }); 
-
-    let results = await fetch(APIPATH + '/fs/dirList', requestConfig)
-
-    const listing = await results.json()
+    const listing = await await FileOp.dirList(path); 
     const objNames = Object.keys(listing);
     const objTypes = Object.values(listing);
 
@@ -172,7 +230,7 @@ addressBar.addEventListener(
 function getCurrentBrowsingPath() { 
     return addressBar.value.split(/\/+/).join(" ").trim().split(" ").join("/");
 }
-function getCurrentBrowsingDirectory() {
+function getCurrentBrowsingDirectoryName() {
     let dirs = addressBar.value.split(/\/+/).join(" ").trim().split(" "); 
     return dirs[dirs.length - 1];
 }
@@ -181,7 +239,7 @@ fileObjsHolder.addEventListener("click", async (ev) => {
     let target = findPropagationTarget(ev.target, fileObjsHolder); 
 
     let slots = getSlots(target); 
-    if (slots[fileObjMapping["Type"]].innerText == "Dir") {
+    if (slots[fileObjMapping["Type"]].innerText == FileConstants.kDirectory) {
         const targetPath = addressBar.value + slots[fileObjMapping["Name"]].innerText + '/' 
         dirList(targetPath); 
         updateAddressBar(targetPath); 
@@ -219,7 +277,11 @@ addressBar.addEventListener("focusout", async (ev) => {
     navObjsHolder.hidden = false; 
 }) 
 
-const rightClickMenu = document.getElementById("right-click-menu");
+let rightClickMenu = document.getElementById("right-click-menu");
+let rightClickMenuActionVariables = {
+    targetPath: "",
+    targetType: "",
+};
 const rightClickMenuOptions = {
     "Download": document.getElementById("right-click-download"),
     "Upload": document.getElementById("right-click-upload"), 
@@ -228,7 +290,7 @@ const rightClickMenuOptions = {
 
 // async (ev) => {...} return string
 const rightClickMenuVariableGetters = {
-    'currentDir': async (ev) => { return getCurrentBrowsingDirectory(); },
+    'currentDir': async (ev) => { return getCurrentBrowsingDirectoryName(); },
     'fileObjName': async (ev) => { return getSlots(ev.currentlySelected)[fileObjMapping["Name"]].innerText; },
     'fileObjType': async (ev) => { return getSlots(ev.currentlySelected)[fileObjMapping["Type"]].innerText; },
 
@@ -279,16 +341,35 @@ document.addEventListener('contextmenu', async (ev) => {
     if (fileObjsHolder.contains(target)) {
         ev.currentlySelected = findPropagationTarget(target, fileObjsHolder);; 
         const fileType = await rightClickMenuVariableGetters["fileObjType"](ev); 
-        if (fileType == "Dir") await rightClickComputeOptions(rightClickFileObjDirShow, ev);
-        else if (fileType == "File") await rightClickComputeOptions(rightClickFileObjFileShow, ev);
+        if (fileType == FileConstants.kDirectory) await rightClickComputeOptions(rightClickFileObjDirShow, ev);
+        else if (fileType == FileConstants.kFile) await rightClickComputeOptions(rightClickFileObjFileShow, ev);
+
+        rightClickMenuActionVariables["targetType"] = await rightClickMenuVariableGetters["fileObjType"](ev);
+        rightClickMenuActionVariables["targetPath"] = getCurrentBrowsingPath() + '/' + await rightClickMenuVariableGetters["fileObjName"](ev);
     } else { 
         await rightClickComputeOptions(rightClickWindowShow);
-    } 
+
+        rightClickMenuActionVariables["targetType"] = FileConstants.kDirectory; 
+        rightClickMenuActionVariables["targetPath"] = await rightClickMenuVariableGetters["currentDir"](ev);
+    }
+
+    if (rightClickMenuActionVariables["targetType"] == FileConstants.kDirectory) {
+        rightClickMenuActionVariables["targetPath"] += '/';
+    }
 
     rightClickMenu.hidden = false;
 
     return false; 
 });
+rightClickMenuOptions["Upload"].addEventListener("click", () => {
+    if (rightClickMenuActionVariables["targetType"] == FileConstants.kDirectory) {
+        uploadHandler.targetPath = rightClickMenuActionVariables["targetPath"]; 
+        uploadHandler.click();
+    }
+});
+rightClickMenuOptions["Download"].addEventListener("click", () => {
+    download([rightClickMenuActionVariables["targetPath"]]); 
+})
 window.addEventListener("click", async (ev) => {
     rightClickMenu.hidden = true;
 });
@@ -296,12 +377,13 @@ window.addEventListener("click", async (ev) => {
 const uploadHandler = document.getElementById("file-uploader"); 
 const navUploadButton = document.getElementById("nav-upload-button");
 navUploadButton.addEventListener('click', (ev) => {
+    uploadHandler.targetPath = getCurrentBrowsingPath(); 
     uploadHandler.click();
 })
 uploadHandler.addEventListener('change', async (ev) => {
     let files = ev.target.files; 
-    await HandleUploads(files, getCurrentBrowsingPath()); 
-    dirList(getCurrentBrowsingPath()); 
+    await HandleUploads(files, uploadHandler.targetPath); 
+    dirList(uploadHandler.targetPath); 
 }, false)
 window.addEventListener("dragenter", (ev) => {
     ev.stopPropagation();

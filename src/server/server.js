@@ -126,6 +126,7 @@ class HTTPFileServer {
 
         this.currentlyActiveSessions = {};
         this.currentlyActiveUploads = {}; 
+        this.currentlyActiveReads = {}; 
 
         this._server.use("/", express.static("./src/client/")); 
 
@@ -165,7 +166,17 @@ class HTTPFileServer {
             if (await FileSystemOp.writeFile(path, req).catch((err) => {next(err)})) {
                 return res.status(201).json("Success"); 
             }
-        })
+        }); 
+
+        this._server.use("/endpoints/binary/read/", async(req, res, next) => {
+            const readToken = req.headers["x-read-token"]
+            if (!readToken || !this.currentlyActiveReads[readToken]) return next(Helpers.genError(400, "Need Read Approve"));
+            delete this.currentlyActiveReads[readToken];
+            return next(); 
+        });
+        this._server.use('/endpoints/binary/read/', express.static("./", {
+            "dotfiles": "allow", 
+        }));
 
         this._server.post("/api/fs/:op", async (req, res, next) => {
             if (!req.body["Path"]) return next(Helpers.genError(400, "Path required")); 
@@ -189,6 +200,13 @@ class HTTPFileServer {
                     const writeToken = Helpers.generateRandomString(36);
                     this.currentlyActiveUploads[writeToken] = filePath
                     return res.status(201).json({"writeToken": writeToken}); 
+
+                    break; 
+                case "readPreApprove":
+                    if (!await FileSystemOp.hasAccess(filePath)) throw Helpers.genError(401, "No Access");
+                    const readToken = Helpers.generateRandomString(36);
+                    this.currentlyActiveReads[readToken] = filePath;
+                    return res.status(201).json({ "readToken": readToken });
 
                     break; 
                 default:
